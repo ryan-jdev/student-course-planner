@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Course Planner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Course Planner</h1>
+      <p>Add courses and automatically detect time conflicts.</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="alerts">
+          {% for category, msg in messages %}
+            <div class="alert {{ category }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="card">
+      <form class="course-form" action="/add" method="post">
+        <input name="name" placeholder="Course name (e.g., CP317)" required>
+
+        <select name="day">
+          <option>Monday</option>
+          <option>Tuesday</option>
+          <option>Wednesday</option>
+          <option>Thursday</option>
+          <option>Friday</option>
+        </select>
+
+        <input name="time" placeholder="Time (24h format, e.g., 16:00-18:00)" required>
+
+        <button type="submit">Add Course</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>My Courses</h2>
+        <span class="muted">{{ courses|length }} total</span>
+      </div>
+
+      {% if courses|length == 0 %}
+        <p class="empty">No courses added yet. Add one above.</p>
+      {% else %}
+        <div class="course-list">
+          {% for c in courses %}
+            <div class="course-row">
+              <div class="course-main">
+                <div class="course-name">{{ c['name'] }}</div>
+                <div class="course-meta">{{ c['day'] }} • {{ c['time'] }}</div>
+              </div>
+              <a class="delete" href="/delete/{{ c['id'] }}">Delete</a>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
