@@ -1,132 +1,170 @@
+
 """
 Student Course Planner
-A Flask-based web application that allows users to add, view,
-and delete courses stored in an SQLite database.
 
-Technologies:
-- Python
-- Flask
-- SQLite
+A Python application for managing course schedules.
+
+Features:
+- Add, view, and delete courses
+- Display courses using numbered lists
+- Store course start and end times
+- Check for scheduling conflicts
+- Validate course deletion input
 """
 
-from flask import Flask, render_template, request, redirect, flash
-import sqlite3
-import os
+courses = []
 
-app = Flask(__name__)
-app.secret_key = "dev"
+def save_courses():
+    file = open("courses.txt", "w")
 
-# Determine absolute path to database file
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "database.db")
+    for course in courses:
+        file.write(course["name"] + "," + course["day"] + "," + course["startTime"] + "," + course["endTime"] + "\n")
 
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    file.close()
 
-# Hompage route: displays all saved courses
-@app.route("/")
-def index():
-    conn = get_db_connection()
-    courses = conn.execute("SELECT * FROM courses").fetchall()
-    print("COURSES COUNT:", len(courses))
-    conn.close()
-    return render_template("index.html", courses=courses)
+def valid_time(time):
+    parts = time.split(":")
 
-def parse_time_range(time_str: str):
-    """
-    Expects 'HH:MM-HH:MM' (24-hour). Returns (start_minutes, end_minutes).
-    Raises ValueError if invalid.
-    """
-    time_str = time_str.strip()
-    if "-" not in time_str:
-        raise ValueError("Time must be in format HH:MM-HH:MM")
+    if len(parts) != 2:
+        return False
 
-    start_s, end_s = [p.strip() for p in time_str.split("-", 1)]
+    if not parts[0].isdigit() or not parts[1].isdigit():
+        return False
 
-    def to_minutes(hhmm: str) -> int:
-        hh, mm = hhmm.split(":")
-        h = int(hh)
-        m = int(mm)
-        if not (0 <= h <= 23 and 0 <= m <= 59):
-            raise ValueError("Invalid time value")
-        return h * 60 + m
+    hours = int(parts[0])
+    minutes = int(parts[1])
 
-    start = to_minutes(start_s)
-    end = to_minutes(end_s)
-    if end <= start:
-        raise ValueError("End time must be after start time")
-    return start, end
+    if hours < 0 or hours > 23:
+        return False
 
+    if minutes < 0 or minutes > 59:
+        return False
 
-def overlaps(a_start, a_end, b_start, b_end) -> bool:
-    # True if time ranges overlap (not counting touching endpoints as overlap)
-    return a_start < b_end and b_start < a_end
+    return True
 
-
-@app.route("/add", methods=["POST"])
-def add_course():
-    name = request.form["name"].strip()
-    day = request.form["day"].strip()
-    time = request.form["time"].strip()
-
-    # Validate time format
+def load_courses():
     try:
-        new_start, new_end = parse_time_range(time)
-    except ValueError as e:
-        flash(f"Invalid time: {e}", "error")
-        return redirect("/")
+        file = open("courses.txt", "r")
 
-    conn = get_db_connection()
+        for line in file:
+            parts = line.strip().split(",")
 
-    # Fetch existing courses on the same day
-    existing = conn.execute(
-        "SELECT name, time FROM courses WHERE day = ?",
-        (day,),
-    ).fetchall()
+            course = {
+                "name": parts[0],
+                "day": parts[1],
+                "startTime": parts[2],
+                "endTime": parts[3]
+            }
 
-    # Check for overlaps
-    for row in existing:
-        try:
-            old_start, old_end = parse_time_range(row["time"])
-        except Exception:
+            courses.append(course)
+
+        file.close()
+
+    except FileNotFoundError:
+        pass
+
+# Load saved courses when program starts
+load_courses()
+
+while True:
+    print("\nStudent Course Planner")
+    print("1. Add Course")
+    print("2. View Courses")
+    print("3. Delete Courses")
+    print("4. Exit")
+
+    choice = input("Choose an option: ")
+
+
+    if choice == "1":
+        name = input("Course name: ")
+        day = input("Day of the week: ")
+        time = input("Start Time (24 Hour Clock): ")
+        endTime = input("End time (24 Hour Clock): ")
+
+        if name.strip() == "" or day.strip() == "":
+            print("Course name and day cannot be empty.")
             continue
 
-        if overlaps(new_start, new_end, old_start, old_end):
-            conn.close()
-            flash(f"Conflict: overlaps with {row['name']} ({day} {row['time']})", "error")
-            return redirect("/")
+        if not valid_time(time) or not valid_time(endTime):
+            print("Invalid time. Please use HH:MM format.")
+            continue
 
-    # No conflict: insert
-    conn.execute(
-        "INSERT INTO courses (name, day, time) VALUES (?, ?, ?)",
-        (name, day, time),
-    )
-    conn.commit()
-    conn.close()
+        conflict = False
 
-    flash("Course added!", "success")
-    return redirect("/")
+        start_parts = time.split(":")
+        end_parts = endTime.split(":")
 
-# Deletes a course by their ID
-@app.route('/delete/<int:id>')
-def delete_course(id):
-    conn = get_db_connection()
-    conn.execute('DELETE FROM courses WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
-    return redirect('/')
+        start_minutes = int(start_parts[0]) * 60 + int(start_parts[1])
+        end_minutes = int(end_parts[0]) * 60 + int(end_parts[1])
 
-if __name__ == '__main__':
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS courses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            day TEXT,
-            time TEXT
-        )
-    ''')
-    conn.close()
-    app.run(debug=True)
+        if end_minutes <= start_minutes:
+            print("End time must be later than start time.")
+            continue
+
+        conflict = False
+
+        for course in courses:
+            if course["day"] == day:
+                existing_start_parts = course["startTime"].split(":")
+                existing_end_parts = course["endTime"].split(":")
+
+                existing_start_minutes = int(existing_start_parts[0]) * 60 + int(existing_start_parts[1])
+                existing_end_minutes = int(existing_end_parts[0]) * 60 + int(existing_end_parts[1])
+
+                if start_minutes < existing_end_minutes and end_minutes > existing_start_minutes:
+                    conflict = True
+                    print("Scheduling conflict with", course["name"])
+
+
+        if conflict == False:
+            course = {
+                "name": name,
+                "day": day,
+                "startTime": time,
+                "endTime": endTime
+            }
+
+            courses.append(course)
+            save_courses()
+            print("Course added successfully.")
+
+    elif choice == "2":
+        if len(courses) == 0:
+            print("\nThere are no courses to display.")
+        else:
+            for i in range(len(courses)):
+                course = courses[i]
+                print(i + 1, "-", course["name"], "-", course["day"], "-", course["startTime"], "-", course["endTime"])
+
+    elif choice == "3":
+        if len(courses) == 0:
+            print("There are no courses available to delete.")
+
+        else:
+            for i in range (len(courses)):
+                print(i + 1, "-", courses[i]["name"])
+
+            delete = input("Choose which course to delete: ")
+
+            if delete.isdigit():
+                delete = int(delete)
+
+                if delete >= 1 and delete <= len(courses):
+                    courses.pop(delete - 1)
+                    save_courses()
+                    print("Course deleted.")
+
+                else:
+                    print("Invalid course number.")
+
+            else:
+                print("Please enter a number.")
+
+
+    elif choice == "4":
+        print("Thank you for using the student course planner!")
+        break
+
+    else:
+        print("Invalid choice, please pick (1-4).")
